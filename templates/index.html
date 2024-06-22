@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alien Invasion Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+        #game-area { margin: 20px auto; width: 320px; height: 320px; border: 2px solid #000; position: relative; }
+        .cell { width: 10px; height: 10px; position: absolute; }
+        .alien { background: red; }
+        #player { background: blue; bottom: 0; }
+        .bullet { width: 5px; height: 5px; background: yellow; }
+        button { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Alien Invasion Game</h1>
+    <div id="game-area"></div>
+    <button onclick="startGame()">Start Game</button>
+    <h2>Total Aliens Destroyed: <span id="total-destroyed">0</span></h2>
+
+    <script>
+        const GRID_SIZE = 32;
+        const CELL_SIZE = 10;
+        let gameArea;
+        let interval;
+
+        async function startGame() {
+            const response = await fetch('/start_game', { method: 'POST' });
+            const gameState = await response.json();
+            updateGameArea(gameState);
+            interval = setInterval(updateGame, 500);
+            window.addEventListener('keydown', movePlayer);
+        }
+
+        async function movePlayer(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                const response = await fetch('/move_player', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction: e.key === 'ArrowLeft' ? 'left' : 'right' })
+                });
+                const gameState = await response.json();
+                updateGameArea(gameState);
+            }
+        }
+
+        async function updateGame() {
+            const response = await fetch('/update_game', { method: 'POST' });
+            const gameState = await response.json();
+            updateGameArea(gameState);
+
+            if (gameState.game_over) {
+                clearInterval(interval); // Stop the game loop
+                alert('Game Over! Aliens reached the bottom.');
+                saveScoreToMongoDB(gameState.total_destroyed);
+            }
+        }
+
+        async function updateGameArea(gameState) {
+            gameArea = document.getElementById('game-area');
+            gameArea.innerHTML = '';
+
+            const player = document.createElement('div');
+            player.id = 'player';
+            player.className = 'cell';
+            player.style.left = `${gameState.player_pos * CELL_SIZE}px`;
+            player.style.bottom = '0px';
+            gameArea.appendChild(player);
+
+            gameState.aliens.forEach(alien => {
+                const alienDiv = document.createElement('div');
+                alienDiv.className = 'cell alien';
+                alienDiv.style.left = `${alien.x * CELL_SIZE}px`;
+                alienDiv.style.top = `${(GRID_SIZE - 1 - alien.y) * CELL_SIZE}px`;
+                gameArea.appendChild(alienDiv);
+            });
+
+            gameState.bullets.forEach(bullet => {
+                const bulletDiv = document.createElement('div');
+                bulletDiv.className = 'cell bullet';
+                bulletDiv.style.left = `${bullet.x * CELL_SIZE + 2.5}px`;
+                bulletDiv.style.bottom = `${bullet.y * CELL_SIZE + 5}px`;
+                gameArea.appendChild(bulletDiv);
+            });
+
+            document.getElementById('total-destroyed').innerText = gameState.total_destroyed;
+        }
+
+        async function fetchTotalDestroyed() {
+            const response = await fetch('/get_total_destroyed');
+            const data = await response.json();
+            document.getElementById('total-destroyed').innerText = data.total_destroyed;
+        }
+
+        async function saveScoreToMongoDB(score) {
+            const response = await fetch('/save_score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ total_destroyed: score })
+            });
+            const result = await response.json();
+            console.log('Score saved to MongoDB:', result);
+        }
+
+        window.onload = fetchTotalDestroyed;
+    </script>
+</body>
+</html>
